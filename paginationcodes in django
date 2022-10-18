@@ -1,0 +1,69 @@
+from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
+
+# First we create a little helper function, becase we will potentially have many PaginatedTypes 
+# and we will potentially want to turn many querysets into paginated results:
+
+def get_paginator(qs, page_size, page, paginated_type, **kwargs):
+    p = Paginator(qs, page_size)
+    try:
+        page_obj = p.page(page)
+    except PageNotAnInteger:
+        page_obj = p.page(1)
+    except EmptyPage:
+        page_obj = p.page(p.num_pages)
+    return paginated_type(
+        page=page_obj.number,
+        pages=p.num_pages,
+        has_next=page_obj.has_next(),
+        has_prev=page_obj.has_previous(),
+        objects=page_obj.object_list,
+        **kwargs
+    )
+02_schema.py
+from theartling.utils import get_paginator
+
+from . import models
+
+
+# Let's assume you have some ObjectType for one of your models:
+class ProductType(DjangoObjectType):
+    class Meta:
+        model = models.Product
+
+
+# Now we create a corresponding PaginatedType for that object type:
+class ProductPaginatedType(graphene.ObjectType):
+    page = graphene.Int()
+    pages = graphene.Int()
+    has_next = graphene.Boolean()
+    has_prev = graphene.Boolean()
+    objects = graphene.List(ProductType)
+
+
+class Query(object):
+    products = graphene.Field(ProductPaginatedType, page=graphene.Int())
+
+    # Now, in your resolver functions, you just query your objects and turn the queryset into the PaginatedType using the helper function:
+    def resolve_products(self, info, page):
+        page_size = 10
+        qs = models.Product.objects.all()
+        return get_paginator(qs, page_size, page, ProductPaginatedType)
+03_frontend.js
+// In your frontend, you just query your endpoint and request all the fields from the PaginatedType:
+
+const gql = `
+  {
+    products(page: 1) {
+      page
+      pages
+      has_next
+      has_prev
+      objects {
+        id
+        name
+        slug
+        whatever
+      }
+    }
+  }
+`
